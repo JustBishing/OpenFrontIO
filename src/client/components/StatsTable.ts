@@ -65,6 +65,9 @@ interface HeldBlock {
   edge: "top" | "bottom" | null;
 }
 
+/** Whether a row climbed or fell over the last 30 seconds. */
+type Trend = "up" | "down";
+
 // Fallbacks cover the first render before measurement and jsdom (tests),
 // which reports zero element sizes.
 const FALLBACK_ROW_HEIGHT_PX = 24;
@@ -82,6 +85,16 @@ const GLIDE: KeyframeAnimationOptions = {
 // A longer gap between two refreshes is a jump of the clock (a replay seek
 // forward, a tab that slept): the rows did not move there, they are there.
 const CLOCK_JUMP_TICKS = 30 * TICKS_PER_SECOND;
+// A row is marked when its rank moved over this window and stayed moved
+// for the last few refreshes. Early ranks change all the time, so nothing
+// is marked in the spawn phase or the minute after it.
+const TREND_WINDOW_TICKS = 30 * TICKS_PER_SECOND;
+const TREND_HELD_REFRESHES = 5;
+const TREND_QUIET_TICKS = 60 * TICKS_PER_SECOND;
+const TREND_LABEL: Record<Trend, string> = {
+  up: "leaderboard.trend_up",
+  down: "leaderboard.trend_down",
+};
 // What each table is called, by a screen reader and in the column menu.
 export const TABLE_NAME: Record<StatsTableKind, string> = {
   player: "leaderboard.players_table",
@@ -279,6 +292,14 @@ const GAUGE_FILL: Record<GaugeLevel, string> = {
 const SIZER = "grid col-span-full h-0 overflow-hidden invisible";
 const SIZER_CELL =
   "flex flex-col px-0.75 font-bold tabular-nums whitespace-nowrap";
+// A small triangle before the rank; its shape and its colour both tell the
+// direction. The rank beside it never shrinks: three digits and the mark
+// take some of the cell's padding rather than lose a digit.
+const TREND = "me-px h-1 w-1.25 shrink-0 [&+span]:shrink-0";
+const TREND_SHAPE: Record<Trend, string> = {
+  up: "bg-green-400 [clip-path:polygon(50%_0,100%_100%,0_100%)]",
+  down: "bg-red-400 [clip-path:polygon(0_0,100%_0,50%_100%)]",
+};
 
 // An icon with a mark ("/m", the limit sign) is one box: the mark sits on
 // the icon's baseline. "/m" has a slot of its own fixed width, so the four
@@ -371,6 +392,16 @@ export abstract class StatsTable extends LitElement {
     hint: boolean;
   } | null = null;
 
+  /** Each row's rank at each refresh, back to one 30 seconds old. */
+  private rankHistory: {
+    tick: number;
+    sort: string;
+    ranks: Map<string, number>;
+  }[] = [];
+  /** The first tick seen after the spawn phase. */
+  private playStartTick: number | null = null;
+  private trends = new Map<string, Trend>();
+
   private rowHeightPx = FALLBACK_ROW_HEIGHT_PX;
   private viewportHeightPx = FALLBACK_VIEWPORT_HEIGHT_PX;
 
@@ -407,6 +438,7 @@ export abstract class StatsTable extends LitElement {
       // The scroll container is recreated at scroll offset 0 when the table
       // was hidden, so the remembered offset would misplace the window.
       this.scrollOffsetPx = 0;
+      this.rankHistory = [];
       this.updateStats();
     }
   }
@@ -617,6 +649,7 @@ export abstract class StatsTable extends LitElement {
     const placed = sorted.map((row, index) => ({ row, position: index + 1 }));
     this.rows = holdOrder ? this.inDrawnOrder(placed) : placed;
     this.noteMoves(this.game);
+    this.noteTrends(this.game);
     this.requestUpdate();
   }
 
@@ -668,6 +701,79 @@ export abstract class StatsTable extends LitElement {
     this.lastIndex = index;
     this.lastSort = sort;
     this.lastTick = tick;
+  }
+
+  /**
+   * Keeps the rank history and marks the rows whose rank is better, or
+   * worse, than 30 seconds ago in each of the last few refreshes: a move
+   * that held, not a wobble.
+   */
+  private noteTrends(game: GameView) {
+    const tick = game.ticks();
+    if (game.inSpawnPhase()) this.playStartTick = null;
+    // Also when a replay seeks back before it: play is taken to start there.
+    else if (this.playStartTick === null || tick < this.playStartTick) {
+      this.playStartTick = tick;
+    }
+
+    // A new sort, a replay seek or a jump of the clock: the ranks from
+    // before say nothing about the moves since.
+    const sort = `${this.sortKey} ${this.sortOrder}`;
+    const last = this.rankHistory[this.rankHistory.length - 1];
+    if (
+      last !== undefined &&
+      (last.sort !== sort ||
+        tick < last.tick ||
+        tick - last.tick > TREND_WINDOW_TICKS)
+    ) {
+      this.rankHistory = [];
+    } else if (last?.tick === tick) {
+      // The clock stood still (a pause): nothing moved.
+      return;
+    }
+    this.rankHistory.push({
+      tick,
+      sort,
+      ranks: new Map(this.rows.map(({ row, position }) => [row.key, position])),
+    });
+    while (
+      this.rankHistory.length > 1 &&
+      this.rankHistory[1].tick <= tick - TREND_WINDOW_TICKS
+    ) {
+      this.rankHistory.shift();
+    }
+
+    this.trends = new Map();
+    const [then] = this.rankHistory;
+    const recent = this.rankHistory.slice(-TREND_HELD_REFRESHES);
+    if (
+      this.playStartTick === null ||
+      tick - this.playStartTick < TREND_QUIET_TICKS ||
+      then.tick > tick - TREND_WINDOW_TICKS ||
+      this.rankHistory.length <= TREND_HELD_REFRESHES
+    ) {
+      return;
+    }
+    for (const [key, before] of then.ranks) {
+      const ranks = recent.map((snapshot) => snapshot.ranks.get(key));
+      if (ranks.every((rank) => rank !== undefined && rank < before)) {
+        this.trends.set(key, "up");
+      } else if (ranks.every((rank) => rank !== undefined && rank > before)) {
+        this.trends.set(key, "down");
+      }
+    }
+  }
+
+  /**
+   * The marks of the drawn rows, or none when more than half of them would
+   * carry one: the ranks are being reshuffled, which is not news.
+   */
+  private shownTrends(items: readonly ListItem[]): ReadonlyMap<string, Trend> {
+    const keys = items.flatMap((item) =>
+      "placed" in item ? [item.placed.row.key] : [],
+    );
+    const marked = keys.filter((key) => this.trends.has(key)).length;
+    return marked * 2 > keys.length ? new Map() : this.trends;
   }
 
   private renderHeaderCell(column: ColumnDef, index: number) {
@@ -761,6 +867,7 @@ export abstract class StatsTable extends LitElement {
     color: string | undefined,
     alive: StatsRow["alive"],
     troopFill: number | undefined,
+    trend: Trend | undefined,
     marks: readonly RowMark[] = [],
   ) {
     // A player without a clan shows a dash. Zeros recede, but not the Type
@@ -799,6 +906,7 @@ export abstract class StatsTable extends LitElement {
             : nothing
         }
         ${gauge ? renderGauge(troopFill) : nothing}
+        ${column.id === "rank" ? this.renderTrend(trend) : nothing}
         <span
           class="min-w-0 truncate"
           dir=${isName ? "auto" : nothing}
@@ -835,12 +943,25 @@ export abstract class StatsTable extends LitElement {
     ></span>`;
   }
 
+  private renderTrend(trend: Trend | undefined) {
+    if (trend === undefined) return nothing;
+    const label = translateText(TREND_LABEL[trend]);
+    return html`<span
+      class="${TREND} ${TREND_SHAPE[trend]}"
+      role="img"
+      aria-label=${label}
+      title=${label}
+      data-trend=${trend}
+    ></span>`;
+  }
+
   private renderRow(
     game: GameView,
     columns: readonly ColumnDef[],
     { row, position }: PlacedRow,
     index: number,
     block: HeldBlock,
+    trend: Trend | undefined,
   ) {
     const state: RowState = row.pinned
       ? "me"
@@ -904,6 +1025,7 @@ export abstract class StatsTable extends LitElement {
               row.color,
               row.alive,
               column.id === gaugeColumn ? row.troopFill : undefined,
+              trend,
               column.id === "player" ? row.marks : undefined,
             );
           },
@@ -956,6 +1078,7 @@ export abstract class StatsTable extends LitElement {
       if (index >= lastIndex) place(index);
     }
     spaceTo(this.rows.length);
+    const trends = this.shownTrends(items);
     // "auto" tracks stay content-sized intrinsically, then split only the
     // spare width supplied by a wider sibling; fixed tracks never stretch.
     // The empty last track is room the host can leave for a button over the
@@ -1034,6 +1157,7 @@ export abstract class StatsTable extends LitElement {
                         item.placed,
                         item.index,
                         block,
+                        trends.get(item.placed.row.key),
                       ),
               )}
             </div>
