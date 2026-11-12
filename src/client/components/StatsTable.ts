@@ -38,17 +38,22 @@ export interface StatsRow {
   onClick?: () => void;
 }
 
-/** A row plus the rank it renders at (list-wide, not window-relative). */
+/**
+ * A row plus its rank (list-wide, not window-relative), which is not always
+ * its place in the list: the order holds while a mouse is on it.
+ */
 interface PlacedRow {
   row: StatsRow;
   position: number;
 }
 
 /**
- * What the list draws: a row, or a spacer `spacer` px tall standing for the
- * rows from index `from` that have no DOM.
+ * What the list draws: the row at index `index`, or a spacer `spacer` px
+ * tall standing for the rows from index `from` that have no DOM.
  */
-type ListItem = { spacer: number; from: number } | { placed: PlacedRow };
+type ListItem =
+  | { spacer: number; from: number }
+  | { placed: PlacedRow; index: number };
 
 /**
  * Your row and the rows held with it: the list's indexes from `from` to
@@ -345,7 +350,9 @@ export abstract class StatsTable extends LitElement {
   ): StatsRow[];
 
   private readonly userSettings = new UserSettings();
-  private rows: StatsRow[] = [];
+  private rows: PlacedRow[] = [];
+  // A mouse is on the list: refreshes keep the rows where they are drawn.
+  private frozen = false;
 
   @state()
   private sortKey: ColumnId | null = null;
@@ -394,6 +401,8 @@ export abstract class StatsTable extends LitElement {
     }
     // Opened again, it has no order of before to glide from.
     if (changed.has("visible") && !this.visible) this.lastIndex.clear();
+    // A list removed from under the pointer gets no pointerleave.
+    if (changed.has("visible") && !this.visible) this.frozen = false;
     if (changed.has("visible") && this.visible) {
       // The scroll container is recreated at scroll offset 0 when the table
       // was hidden, so the remembered offset would misplace the window.
@@ -445,7 +454,8 @@ export abstract class StatsTable extends LitElement {
     });
     if (seen.length > GLIDE_MAX_ROWS) return;
     const held =
-      this.heldBlock(this.rows.findIndex((row) => row.pinned)).edge !== null;
+      this.heldBlock(this.rows.findIndex(({ row }) => row.pinned)).edge !==
+      null;
     for (const { row, from, to } of moved) {
       if (
         (row.hasAttribute("data-me") || row.hasAttribute("data-near")) &&
@@ -517,7 +527,8 @@ export abstract class StatsTable extends LitElement {
       this.sortKey = key;
       this.sortOrder = "desc";
     }
-    this.updateStats();
+    // Asked for, so it re-sorts at once even under the pointer.
+    this.updateStats(false);
   }
 
   private tooltipId() {
@@ -547,7 +558,32 @@ export abstract class StatsTable extends LitElement {
     );
   }
 
-  private updateStats() {
+  // A click on a row goes to that player: with ranks changing every second,
+  // the row under a mouse could change between aiming and clicking. On a
+  // touch screen the tap aims and clicks at once.
+  private onListPointerEnter(event: PointerEvent) {
+    if (event.pointerType === "mouse") this.frozen = true;
+  }
+
+  private onListPointerLeave() {
+    if (!this.frozen) return;
+    this.frozen = false;
+    this.updateStats();
+  }
+
+  /**
+   * The rows in the order they are drawn in, each with its new rank, so two
+   * can read 4 then 3 until the pointer leaves. New rows go to the end.
+   */
+  private inDrawnOrder(placed: PlacedRow[]): PlacedRow[] {
+    const end = this.rows.length;
+    const drawn = new Map(this.rows.map(({ row }, index) => [row.key, index]));
+    return placed.sort(
+      (a, b) => (drawn.get(a.row.key) ?? end) - (drawn.get(b.row.key) ?? end),
+    );
+  }
+
+  private updateStats(holdOrder = this.frozen) {
     if (this.game === null) return;
 
     const columns = this.visibleColumns();
@@ -570,7 +606,7 @@ export abstract class StatsTable extends LitElement {
     const sortKey = this.sortKey;
     const rows = this.buildRows(this.game, columns);
     const direction = this.sortOrder === "asc" ? 1 : -1;
-    this.rows =
+    const sorted =
       orderable.length === 0 || sortKey === null
         ? rows
         : rows.sort(
@@ -578,6 +614,8 @@ export abstract class StatsTable extends LitElement {
               direction *
               ((a.values.get(sortKey) ?? 0) - (b.values.get(sortKey) ?? 0)),
           );
+    const placed = sorted.map((row, index) => ({ row, position: index + 1 }));
+    this.rows = holdOrder ? this.inDrawnOrder(placed) : placed;
     this.noteMoves(this.game);
     this.requestUpdate();
   }
@@ -620,7 +658,7 @@ export abstract class StatsTable extends LitElement {
     this.moves = new Map();
     // The rows are about to be drawn in an order the glides know nothing of.
     if (!comparable) this.stopGlides();
-    this.rows.forEach((row, to) => {
+    this.rows.forEach(({ row }, to) => {
       index.set(row.key, to);
       const from = this.lastIndex.get(row.key);
       if (comparable && from !== undefined && from !== to) {
@@ -801,6 +839,7 @@ export abstract class StatsTable extends LitElement {
     game: GameView,
     columns: readonly ColumnDef[],
     { row, position }: PlacedRow,
+    index: number,
     block: HeldBlock,
   ) {
     const state: RowState = row.pinned
@@ -813,7 +852,6 @@ export abstract class StatsTable extends LitElement {
     )
       ? "troops"
       : "maxtroops";
-    const index = position - 1;
     const held = index >= block.from && index < block.to;
     const near = held && !row.pinned;
     const nearHeld = near && block.edge !== null;
@@ -897,7 +935,7 @@ export abstract class StatsTable extends LitElement {
     // them. Those spacers change while the list scrolls, so the list keeps
     // no scroll anchor: the browser must not answer them by moving the
     // scroll position.
-    const block = this.heldBlock(this.rows.findIndex((row) => row.pinned));
+    const block = this.heldBlock(this.rows.findIndex(({ row }) => row.pinned));
     const items: ListItem[] = [];
     let next = 0; // the first row not yet in items
     const spaceTo = (index: number) => {
@@ -907,7 +945,7 @@ export abstract class StatsTable extends LitElement {
     };
     const place = (index: number) => {
       spaceTo(index);
-      items.push({ placed: { row: this.rows[index], position: index + 1 } });
+      items.push({ placed: this.rows[index], index });
       next = index + 1;
     };
     for (let index = block.from; index < block.to; index++) {
@@ -974,6 +1012,8 @@ export abstract class StatsTable extends LitElement {
               style="grid-template-columns: subgrid; grid-column: 1 / -1;"
               role="rowgroup"
               @scroll=${this.onScroll}
+              @pointerenter=${this.onListPointerEnter}
+              @pointerleave=${this.onListPointerLeave}
             >
               ${repeat(
                 items,
@@ -988,7 +1028,13 @@ export abstract class StatsTable extends LitElement {
                         style="height: ${item.spacer}px"
                         aria-hidden="true"
                       ></div>`
-                    : this.renderRow(game, columns, item.placed, block),
+                    : this.renderRow(
+                        game,
+                        columns,
+                        item.placed,
+                        item.index,
+                        block,
+                      ),
               )}
             </div>
           </div>
