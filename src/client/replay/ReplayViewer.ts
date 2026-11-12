@@ -1097,6 +1097,7 @@ export class ReplayViewer extends LitElement {
           <button
             type="button"
             class="${HUD_ICON_BUTTON} aria-expanded:bg-white/15 aria-expanded:text-white"
+            data-column-menu-button
             aria-haspopup="dialog"
             aria-expanded="false"
             aria-label=${columns}

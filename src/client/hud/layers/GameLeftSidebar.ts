@@ -229,6 +229,7 @@ export class GameLeftSidebar extends LitElement implements Controller {
                     type="button"
                     class=${MENU_BUTTON}
                     data-sidebar-button="columns"
+                    data-column-menu-button
                     aria-haspopup="dialog"
                     aria-expanded="false"
                     aria-label=${columns}

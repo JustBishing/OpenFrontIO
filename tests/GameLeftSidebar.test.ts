@@ -524,6 +524,9 @@ describe("GameLeftSidebar", () => {
     expect(sections()).toEqual(["player"]);
 
     // A press on another button of the bar closes it, like any press outside.
+    button("teams")?.dispatchEvent(
+      new PointerEvent("pointerdown", { bubbles: true }),
+    );
     button("teams")?.click();
     await sidebar.updateComplete;
     await picker.updateComplete;
@@ -578,6 +581,40 @@ describe("GameLeftSidebar", () => {
     expect(new UserSettings().statsColumns("player")).toContain("cities");
     expect(new UserSettings().statsColumns("team")).not.toContain("cities");
     expect(header()).not.toBeNull();
+
+    sidebar.remove();
+  });
+
+  it("closes a column menu opened from a header with one press of its button", async () => {
+    const sidebar = new GameLeftSidebar();
+    sidebar.game = ffaGame();
+    sidebar.eventBus = new EventBus();
+    document.body.append(sidebar);
+    sidebar.init();
+    await sidebar.updateComplete;
+    sidebar
+      .querySelector<HTMLElement>('[data-sidebar-button="players"]')
+      ?.click();
+    await sidebar.updateComplete;
+    const picker = sidebar.querySelector("column-picker") as ColumnPicker;
+    sidebar.querySelector("player-stats")?.dispatchEvent(
+      new CustomEvent("columns-menu", {
+        bubbles: true,
+        detail: { x: 10, y: 10 },
+      }),
+    );
+    await picker.updateComplete;
+    expect(document.body.querySelector("[data-column-menu]")).not.toBeNull();
+
+    const columns = sidebar.querySelector<HTMLElement>(
+      '[data-sidebar-button="columns"]',
+    );
+    columns?.dispatchEvent(
+      new PointerEvent("pointerdown", { bubbles: true, cancelable: true }),
+    );
+    columns?.click();
+    await picker.updateComplete;
+    expect(document.body.querySelector("[data-column-menu]")).toBeNull();
 
     sidebar.remove();
   });
