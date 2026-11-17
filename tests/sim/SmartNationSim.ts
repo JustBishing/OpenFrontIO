@@ -260,6 +260,12 @@ async function playOne(opts: Options, seed: string): Promise<RunResult> {
   };
 }
 
+/** Where the player spawned, as x,y. */
+function spawnAt(game: Game, p: Player): string {
+  const t = p.spawnTile();
+  return t === undefined ? "-" : `${game.x(t)},${game.y(t)}`;
+}
+
 function traceLine(game: Game, p: Player): void {
   const max = game.config().maxTroops(p);
   const attackers = p
@@ -276,6 +282,7 @@ function traceLine(game: Game, p: Player): void {
   out(
     `  [trace m${Math.round((game.ticks() - game.config().numSpawnPhaseTurns()) / TICKS_PER_MINUTE)}] ` +
       `${p.name()} alive=${p.isAlive()} tiles=${pct(share(game, p))} ` +
+      `spawn=${spawnAt(game, p)} ` +
       `troops=${Math.round(p.troops())}/${Math.round(max)} gold=${p.gold()} ` +
       `${structures(p)} allies=${p.alliances().length} ` +
       `in=[${attackers}] out=[${targets}]`,
