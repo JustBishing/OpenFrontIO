@@ -290,6 +290,9 @@ export const GameConfigSchema = z.object({
     },
   ),
   bots: zb.uint({ max: 400 }),
+  // How many of the game's nations SmartNation (a rule-based AI) plays
+  // instead. Ignored in public games.
+  smartNations: zb.uint({ max: 400 }).optional(),
   infiniteGold: z.boolean(),
   infiniteTroops: z.boolean(),
   instantBuild: z.boolean(),

@@ -222,6 +222,13 @@ export interface GameConfigSettingsData {
       disabledKey: string;
       hidden?: boolean;
     };
+    // How many of the nations the SmartNation AI plays (0..max).
+    smartNations?: {
+      value: number;
+      max: number;
+      labelKey: string;
+      disabledKey: string;
+    };
     toggles: ToggleOptionConfig[];
     inputCards: TemplateResult[];
   };
@@ -306,6 +313,11 @@ export class GameConfigSettings extends LitElement {
   private handleNationsChanged = (event: Event) => {
     const customEvent = event as CustomEvent<{ value: number }>;
     this.emit("nations-changed", customEvent.detail);
+  };
+
+  private handleSmartNationsChanged = (event: Event) => {
+    const customEvent = event as CustomEvent<{ value: number }>;
+    this.emit("smart-nations-changed", customEvent.detail);
   };
 
   private handleHostCheatToggle = (toggle: ToggleOptionConfig) => {
@@ -614,6 +626,28 @@ export class GameConfigSettings extends LitElement {
                         labelKey=${settings.options.nations.labelKey}
                         disabledKey=${settings.options.nations.disabledKey}
                         @value-changed=${this.handleNationsChanged}
+                      ></fluent-slider>
+                    </div>`
+                  : nothing
+              }
+              ${
+                settings.options.smartNations &&
+                settings.options.smartNations.max > 0
+                  ? html`<div
+                      class="col-span-2 rounded-xl p-4 flex flex-col justify-center border transition-all duration-200 ${
+                        settings.options.smartNations.value > 0
+                          ? ACTIVE_CARD
+                          : INACTIVE_CARD
+                      }"
+                    >
+                      <fluent-slider
+                        min="0"
+                        max=${settings.options.smartNations.max}
+                        step="1"
+                        .value=${settings.options.smartNations.value}
+                        labelKey=${settings.options.smartNations.labelKey}
+                        disabledKey=${settings.options.smartNations.disabledKey}
+                        @value-changed=${this.handleSmartNationsChanged}
                       ></fluent-slider>
                     </div>`
                   : nothing

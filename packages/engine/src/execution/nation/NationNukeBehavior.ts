@@ -31,7 +31,6 @@ import type {
 import { NukeExecution } from "../NukeExecution";
 import { UpgradeStructureExecution } from "../UpgradeStructureExecution";
 import { closestTwoTiles } from "../Util";
-import { NationAttackBehavior } from "./NationAttackBehavior";
 import { EMOJI_NUKE, NationEmojiBehavior } from "./NationEmojiBehavior";
 import { isMirvWorthSavingFor } from "./NationMIRVBehavior";
 import {
@@ -93,6 +92,19 @@ interface Strike {
   nuke: Unit | null;
 }
 
+/**
+ * What the nuke logic needs from its owner's attack behavior: whether a
+ * target may be attacked, who is attacking us, and a follow-up land strike
+ * on a target just nuked. NationAttackBehavior and SmartAttackBehavior both
+ * provide it.
+ */
+export interface NukeStrikePartner {
+  shouldAttack(other: Player | TerraNullius): boolean;
+  findIncomingAttackPlayer(): Player | null;
+  strikeTroops(target: Player): number;
+  strike(target: Player): boolean;
+}
+
 export class NationNukeBehavior {
   private recentlySentNukes: [
     Tick,
@@ -112,7 +124,7 @@ export class NationNukeBehavior {
     private random: PseudoRandom,
     private game: Game,
     private player: Player,
-    private attackBehavior: NationAttackBehavior,
+    private attackBehavior: NukeStrikePartner,
     private emojiBehavior: NationEmojiBehavior,
   ) {}
 
@@ -143,7 +155,7 @@ export class NationNukeBehavior {
     r: SnapshotReader,
     random: PseudoRandom,
     player: Player,
-    attackBehavior: NationAttackBehavior,
+    attackBehavior: NukeStrikePartner,
     emojiBehavior: NationEmojiBehavior,
   ): void {
     const s = readVersioned(NationNukeBehaviorSnapshot, raw);

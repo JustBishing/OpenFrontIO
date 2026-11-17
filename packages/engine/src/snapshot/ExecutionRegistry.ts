@@ -32,6 +32,7 @@ import { RetreatExecutionSnapshot } from "../execution/RetreatExecution";
 import { SAMLauncherExecutionSnapshot } from "../execution/SAMLauncherExecution";
 import { SAMMissileExecutionSnapshot } from "../execution/SAMMissileExecution";
 import { ShellExecutionSnapshot } from "../execution/ShellExecution";
+import { SmartNationExecutionSnapshot } from "../execution/smart/SmartNationExecution";
 import { SpawnExecutionSnapshot } from "../execution/SpawnExecution";
 import { SpawnTimerExecutionSnapshot } from "../execution/SpawnTimerExecution";
 import { TargetPlayerExecutionSnapshot } from "../execution/TargetPlayerExecution";
@@ -86,6 +87,7 @@ export const EXECUTION_SNAPSHOT_TYPES = [
   SAMLauncherExecutionSnapshot,
   SAMMissileExecutionSnapshot,
   ShellExecutionSnapshot,
+  SmartNationExecutionSnapshot,
   SpawnExecutionSnapshot,
   SpawnTimerExecutionSnapshot,
   TargetPlayerExecutionSnapshot,

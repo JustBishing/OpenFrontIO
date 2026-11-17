@@ -17,6 +17,7 @@ const COPIED_KEYS = [
   "difficulty",
   "nations",
   "bots",
+  "smartNations",
   "infiniteGold",
   "donateGold",
   "infiniteTroops",

@@ -67,6 +67,7 @@ import {
   SharedWaterCacheSnapshot,
 } from "../execution/nation/SharedWaterCache";
 import { NationExecution } from "../execution/NationExecution";
+import { SmartNationExecution } from "../execution/smart/SmartNationExecution";
 import { SpawnTimerExecution } from "../execution/SpawnTimerExecution";
 import { TribeExecution } from "../execution/TribeExecution";
 import { AbstractGraph } from "../pathfinding/algorithms/AbstractGraph";
@@ -806,7 +807,9 @@ export class GameImpl implements Game {
     // Remove any NationExecution or TribeExecution controlling this player
     for (const exec of this.executions()) {
       if (
-        (exec instanceof NationExecution || exec instanceof TribeExecution) &&
+        (exec instanceof NationExecution ||
+          exec instanceof SmartNationExecution ||
+          exec instanceof TribeExecution) &&
         exec.playerID() === target.id()
       ) {
         this.removeExecution(exec);
@@ -890,7 +893,8 @@ export class GameImpl implements Game {
         this.removeExecution(exec);
       } else if (
         difficulty !== undefined &&
-        exec instanceof NationExecution &&
+        (exec instanceof NationExecution ||
+          exec instanceof SmartNationExecution) &&
         exec.isActive() &&
         exec.isInitialized()
       ) {

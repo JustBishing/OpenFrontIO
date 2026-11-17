@@ -120,7 +120,8 @@ function expectOnTrack(runner: GameRunner, ref: Reference): void {
 }
 
 const VARIANTS: [string, Partial<GameConfig>][] = [
-  ["free for all", {}],
+  // Two of the nations are SmartNations, so their execution is covered too.
+  ["free for all", { smartNations: 2 }],
   // Water nukes rewrite terrain and the water graph mid-game.
   ["water nukes", { waterNukes: true }],
   ["teams", { gameMode: GameMode.Team, playerTeams: 2 }],
@@ -193,7 +194,7 @@ describe.each(VARIANTS)("full game snapshots: %s", (_, overrides) => {
   test(
     "the game exercised every execution type",
     () => {
-      if (Object.keys(overrides).length > 0) return; // checked once, on FFA
+      if (overrides !== VARIANTS[0][1]) return; // checked once, on FFA
       // Runs during the spawn phase and finishes inside init, so it is never
       // alive at a tick boundary. BasicExecutions.test.ts covers it directly.
       const neverStored = new Set(["Pause"]);

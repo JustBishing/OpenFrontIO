@@ -206,6 +206,8 @@ export class SinglePlayerModal extends BaseModal {
   @state() private selectedDifficulty: Difficulty =
     DEFAULT_OPTIONS.selectedDifficulty;
   @state() private nations: number = 0;
+  // Nations the SmartNation AI plays; never more than `nations`.
+  @state() private smartNations: number = 0;
   @state() private defaultNationCount: number = 0;
   @state() private bots: number = DEFAULT_OPTIONS.bots;
   @state() private infiniteGold: boolean = DEFAULT_OPTIONS.infiniteGold;
@@ -590,6 +592,12 @@ export class SinglePlayerModal extends BaseModal {
                   labelKey: "game_settings.nations",
                   disabledKey: "common.disabled",
                 },
+                smartNations: {
+                  value: Math.min(this.smartNations, this.nations),
+                  max: this.nations,
+                  labelKey: "game_settings.smart_nations",
+                  disabledKey: "common.disabled",
+                },
                 toggles: [
                   {
                     labelKey: "game_settings.instant_build",
@@ -638,6 +646,7 @@ export class SinglePlayerModal extends BaseModal {
             @team-count-selected=${this.handleConfigTeamCountSelected}
             @bots-changed=${this.handleBotsChange}
             @nations-changed=${this.handleNationsChange}
+            @smart-nations-changed=${this.handleSmartNationsChange}
             @option-toggle-changed=${this.handleConfigOptionToggleChanged}
             @unit-toggle-changed=${this.handleConfigUnitToggleChanged}
           ></game-config-settings>
@@ -1071,6 +1080,12 @@ export class SinglePlayerModal extends BaseModal {
     this.nations = value;
   };
 
+  private handleSmartNationsChange = (e: Event) => {
+    const value = (e as CustomEvent<{ value: number }>).detail.value;
+    if (isNaN(value) || value < 0 || value > 400) return;
+    this.smartNations = value;
+  };
+
   private handleMaxTimerToggle = (
     checked: boolean,
     value: number | string | undefined,
@@ -1354,6 +1369,9 @@ export class SinglePlayerModal extends BaseModal {
               this.nations,
               this.defaultNationCount,
             ),
+            ...(this.smartNations > 0
+              ? { smartNations: Math.min(this.smartNations, this.nations) }
+              : {}),
             ...(this.goldMultiplier && this.goldMultiplierValue
               ? { goldMultiplier: this.goldMultiplierValue }
               : {}),

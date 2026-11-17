@@ -75,6 +75,8 @@ export class HostLobbyModal extends BaseModal {
   @state() private selectedMap: GameMapType = GameMapType.World;
   @state() private selectedDifficulty: Difficulty = Difficulty.Easy;
   @state() private nations: number = 0;
+  // Nations the SmartNation AI plays; never more than `nations`.
+  @state() private smartNations: number = 0;
   @state() private defaultNationCount: number = 0;
   @state() private gameMode: GameMode = GameMode.FFA;
   @state() private teamCount: TeamCountConfig = 2;
@@ -160,6 +162,7 @@ export class HostLobbyModal extends BaseModal {
   // Timers for debouncing slider changes
   private botsUpdateTimer: number | null = null;
   private nationsUpdateTimer: number | null = null;
+  private smartNationsUpdateTimer: number | null = null;
   private mapLoader = terrainMapFileLoader;
   private userSettings = new UserSettings();
 
@@ -730,6 +733,12 @@ export class HostLobbyModal extends BaseModal {
                   labelKey: "game_settings.nations",
                   disabledKey: "common.disabled",
                 },
+                smartNations: {
+                  value: Math.min(this.smartNations, this.nations),
+                  max: this.nations,
+                  labelKey: "game_settings.smart_nations",
+                  disabledKey: "common.disabled",
+                },
                 toggles: [
                   {
                     labelKey: "game_settings.instant_build",
@@ -816,6 +825,7 @@ export class HostLobbyModal extends BaseModal {
             @team-count-selected=${this.handleConfigTeamCountSelected}
             @bots-changed=${this.handleBotsChange}
             @nations-changed=${this.handleNationsChange}
+            @smart-nations-changed=${this.handleSmartNationsChange}
             @option-toggle-changed=${this.handleConfigOptionToggleChanged}
             @host-cheat-toggle-changed=${
               this.handleConfigHostCheatToggleChanged
@@ -1655,6 +1665,19 @@ export class HostLobbyModal extends BaseModal {
     }, 300);
   };
 
+  private handleSmartNationsChange = (e: Event) => {
+    const value = (e as CustomEvent<{ value: number }>).detail.value;
+    if (isNaN(value) || value < 0 || value > 400) return;
+    this.smartNations = value;
+    if (this.smartNationsUpdateTimer !== null) {
+      clearTimeout(this.smartNationsUpdateTimer);
+    }
+    this.smartNationsUpdateTimer = window.setTimeout(() => {
+      void this.putGameConfig();
+      this.smartNationsUpdateTimer = null;
+    }, 300);
+  };
+
   private async handleGameModeSelection(value: GameMode) {
     this.gameMode = value;
     if (this.gameMode === GameMode.Team) {
@@ -1937,6 +1960,7 @@ export class HostLobbyModal extends BaseModal {
               : GameMapSize.Normal,
             difficulty: this.selectedDifficulty,
             bots: this.bots,
+            smartNations: Math.min(this.smartNations, this.nations),
             infiniteGold: this.infiniteGold,
             donateGold: this.donateGold,
             infiniteTroops: this.infiniteTroops,

@@ -27,6 +27,8 @@ import { NoOpExecution } from "./NoOpExecution";
 import { PauseExecution } from "./PauseExecution";
 import { QuickChatExecution } from "./QuickChatExecution";
 import { RetreatExecution } from "./RetreatExecution";
+import { SmartNationExecution } from "./smart/SmartNationExecution";
+import { pickSmartNations } from "./smart/SmartNationSelection";
 import { SpawnExecution } from "./SpawnExecution";
 import { TargetPlayerExecution } from "./TargetPlayerExecution";
 import { TransportShipExecution } from "./TransportShipExecution";
@@ -166,8 +168,19 @@ export class Executor {
 
   nationExecutions(): Execution[] {
     const execs: Execution[] = [];
-    for (const nation of this.mg.nations()) {
-      execs.push(new NationExecution(this.gameID_, nation));
+    const nations = this.mg.nations();
+    // Some nations may be played by SmartNation instead (never in public games).
+    const smart = pickSmartNations(
+      this.mg.config().gameConfig(),
+      nations,
+      this.gameID_,
+    );
+    for (const nation of nations) {
+      execs.push(
+        smart.has(nation.playerInfo.id)
+          ? new SmartNationExecution(this.gameID_, nation)
+          : new NationExecution(this.gameID_, nation),
+      );
     }
     return execs;
   }
