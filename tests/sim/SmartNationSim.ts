@@ -32,6 +32,10 @@ import { EngineConfig } from "@openfront/engine/configuration/EngineConfig";
 import { Executor } from "@openfront/engine/execution/ExecutionManager";
 import { SmartNationExecution } from "@openfront/engine/execution/smart/SmartNationExecution";
 import { pickSmartNations } from "@openfront/engine/execution/smart/SmartNationSelection";
+import {
+  bordersFreeLand,
+  landNeighbors,
+} from "@openfront/engine/execution/smart/SmartStrategy";
 import { Game, Player } from "@openfront/engine/game/Game";
 import { createGame } from "@openfront/engine/game/GameImpl";
 import { createNationsForGame } from "@openfront/engine/game/NationCreation";
@@ -101,6 +105,8 @@ interface RunResult {
   leader: string;
   smartAlive: boolean;
   smartGold: bigint;
+  /** Where SmartNation's gold came from over the game. */
+  smartIncome: string;
   avgNationGold: bigint;
   smartStructures: string;
   minutesPlayed: number;
@@ -253,6 +259,7 @@ async function playOne(opts: Options, seed: string): Promise<RunResult> {
     leader: `${leader.name()}${isSmart(leader) ? " (SmartNation)" : ""} ${pct(share(game, leader))}`,
     smartAlive: smart.some((p) => p.isAlive()),
     smartGold: smart.reduce((s, p) => s + p.gold(), 0n),
+    smartIncome: smart.map(income).join("; "),
     avgNationGold: avgGold,
     smartStructures: smart.map(structures).join(" | "),
     minutesPlayed:
@@ -260,10 +267,31 @@ async function playOne(opts: Options, seed: string): Promise<RunResult> {
   };
 }
 
+/** Lifetime gold by source, in thousands. */
+function income(p: Player): string {
+  const k = (g: bigint) => `${(g / 1000n).toLocaleString()}k`;
+  return (
+    `total ${k(p.goldEarned())} trade ${k(p.tradeGold())} ` +
+    `train ${k(p.trainGold())} piracy ${k(p.piracyGold())}`
+  );
+}
+
 /** Where the player spawned, as x,y. */
 function spawnAt(game: Game, p: Player): string {
   const t = p.spawnTile();
   return t === undefined ? "-" : `${game.x(t)},${game.y(t)}`;
+}
+
+/** Land neighbours as name:troops/share, `*` marking allies, plus free-land contact. */
+function neighborSummary(game: Game, p: Player): string {
+  const list = landNeighbors(game, p)
+    .map(
+      (n) =>
+        `${p.isFriendly(n) ? "*" : ""}${n.type() === PlayerType.Bot ? "tribe" : n.name()}:` +
+        `${Math.round(n.troops() / 1000)}k/${pct(share(game, n))}`,
+    )
+    .join(",");
+  return `free=${bordersFreeLand(game, p) ? "y" : "n"} nb=[${list}]`;
 }
 
 function traceLine(game: Game, p: Player): void {
@@ -285,6 +313,7 @@ function traceLine(game: Game, p: Player): void {
       `spawn=${spawnAt(game, p)} ` +
       `troops=${Math.round(p.troops())}/${Math.round(max)} gold=${p.gold()} ` +
       `${structures(p)} allies=${p.alliances().length} ` +
+      `${neighborSummary(game, p)} ` +
       `in=[${attackers}] out=[${targets}]`,
   );
 }
@@ -306,6 +335,7 @@ function printRun(r: RunResult): void {
     `gold:    smart ${r.smartGold.toLocaleString()} vs avg nation ${r.avgNationGold.toLocaleString()}`,
   );
   out(`smart structures: ${r.smartStructures}`);
+  out(`smart income: ${r.smartIncome}`);
 }
 
 async function main(): Promise<void> {

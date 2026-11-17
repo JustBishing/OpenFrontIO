@@ -1,5 +1,9 @@
 import { TileRef } from "@openfront/engine-api/game/GameMap";
-import { SpawnArea, TerrainType } from "@openfront/engine-api/game/GameTypes";
+import {
+  PlayerType,
+  SpawnArea,
+  TerrainType,
+} from "@openfront/engine-api/game/GameTypes";
 import { PseudoRandom } from "@openfront/engine-lib/PseudoRandom";
 import { Game, Player } from "../../game/Game";
 import {
@@ -63,7 +67,8 @@ export function otherPlayerSpots(game: Game, self: Player): TileRef[] {
   const spots: TileRef[] = [];
   const placed = new Set<string>();
   for (const p of game.players()) {
-    if (p === self || !p.hasSpawned()) continue;
+    // Tribes are food, not rivals: only nations and humans count.
+    if (p === self || !p.hasSpawned() || p.type() === PlayerType.Bot) continue;
     const tile = p.spawnTile();
     if (tile === undefined) continue;
     spots.push(tile);

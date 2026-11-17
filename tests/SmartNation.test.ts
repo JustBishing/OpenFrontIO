@@ -10,8 +10,13 @@ import { NationExecution } from "@openfront/engine/execution/NationExecution";
 import { SmartNationExecution } from "@openfront/engine/execution/smart/SmartNationExecution";
 import { pickSmartNations } from "@openfront/engine/execution/smart/SmartNationSelection";
 import {
+  piracyLane,
+  shipsNear,
+} from "@openfront/engine/execution/smart/SmartPiracy";
+import {
   edgeScore,
   naturalBorderScore,
+  otherPlayerSpots,
   separationScore,
 } from "@openfront/engine/execution/smart/SmartSpawn";
 import {
@@ -24,7 +29,7 @@ import {
   troopReserve,
 } from "@openfront/engine/execution/smart/SmartStrategy";
 import { SpawnExecution } from "@openfront/engine/execution/SpawnExecution";
-import { Game, Player } from "@openfront/engine/game/Game";
+import { Game, Player, Unit } from "@openfront/engine/game/Game";
 import { GameImpl } from "@openfront/engine/game/GameImpl";
 import { createGame, L, W } from "./core/pathfinding/_fixtures";
 
@@ -123,13 +128,13 @@ describe("SmartStrategy", () => {
     expect(shouldAcceptAlliance(me, other)).toBe(true);
   });
 
-  it("expands from half its max troops down to a quarter", () => {
+  it("expands with everything above 15% of its max troops", () => {
     const game = landMap();
     const me = addPlayer(game, "me", PlayerType.Nation);
     const max = game.config().maxTroops(me);
-    expect(expansionTroops(game, me, max * 0.4)).toBe(0);
+    expect(expansionTroops(game, me, max * 0.1)).toBe(0);
     expect(expansionTroops(game, me, max * 0.6)).toBe(
-      Math.floor(max * 0.6 - max * 0.25),
+      Math.floor(max * 0.6 - max * 0.15),
     );
   });
 
@@ -180,10 +185,12 @@ describe("SmartStrategy", () => {
     expect(nextEconomyBuild(game, me, false)).toBeNull();
   });
 
-  it("builds a city first", () => {
+  it("builds a port first on the coast, a city first inland", () => {
     const game = landMap();
     const me = addPlayer(game, "me", PlayerType.Nation);
-    expect(nextEconomyBuild(game, me, true)).toBe(UnitType.City);
+    // Trade is most of the income, so a coastal nation opens with a port.
+    expect(nextEconomyBuild(game, me, true)).toBe(UnitType.Port);
+    expect(nextEconomyBuild(game, me, false)).toBe(UnitType.City);
   });
 
   it("keeps a reserve between its base and max share of max troops", () => {
@@ -215,6 +222,27 @@ describe("SmartStrategy", () => {
   });
 });
 
+describe("SmartPiracy", () => {
+  it("patrols where the most trade ships pass, if enough do", () => {
+    const size = 400;
+    const game = createGame({
+      width: size,
+      height: size,
+      grid: Array(size * size).fill(W),
+    });
+    // Only position matters to the lane choice.
+    const ship = (x: number, y: number) =>
+      ({ tile: () => game.ref(x, y) }) as unknown as Unit;
+    const lane = [ship(300, 300), ship(310, 305), ship(305, 310)];
+    const stray = [ship(20, 20), ship(30, 380)];
+    const best = piracyLane(game, [...stray, ...lane]);
+    expect(best?.ships).toBe(3);
+    expect(shipsNear(game, lane, best!.tile)).toBe(3);
+    // Two ships in one spot aren't worth a warship.
+    expect(piracyLane(game, stray)).toBeNull();
+  });
+});
+
 describe("SmartNationExecution in a game", () => {
   function smartGame(config: Partial<GameConfig> = {}) {
     const game = landMap({ gameType: GameType.Singleplayer, ...config });
@@ -229,6 +257,18 @@ describe("SmartNationExecution in a game", () => {
     tickUntil(game, () => player.hasSpawned(), 20);
     return { game, player, rivalPlayer };
   }
+
+  it("keeps away from nations, not tribes, when spawning", () => {
+    const game = landMap();
+    const me = addPlayer(game, "me", PlayerType.Nation);
+    const tribe = addPlayer(game, "tribe", PlayerType.Bot);
+    const rival = addPlayer(game, "rival", PlayerType.Nation);
+    tribe.conquer(game.ref(10, 10));
+    tribe.setSpawnTile(game.ref(10, 10));
+    rival.conquer(game.ref(80, 80));
+    rival.setSpawnTile(game.ref(80, 80));
+    expect(otherPlayerSpots(game, me)).toEqual([game.ref(80, 80)]);
+  });
 
   it("spawns away from other players, towards the map edge", () => {
     const { game, player, rivalPlayer } = smartGame();

@@ -13,6 +13,7 @@ import {
   CITIES_PER_FACTORY,
   CITIES_PER_SAM,
   CITIES_PER_SILO,
+  CITIES_BEFORE_FIRST_PORT,
   CITIES_PER_PORT,
   DEFENSE_POST_DEPTH,
   DEFENSE_MIN_CITIES,
@@ -312,8 +313,9 @@ function cost(game: Game, player: Player, type: UnitType): bigint {
 }
 
 /**
- * What to build next: cities first (population cap), then ports when
- * coastal, then factories once gold allows, then more cities as we grow.
+ * What to build next: a first port when coastal (trade is most of our
+ * income), then cities (troop cap), more ports, factories once gold
+ * allows, SAMs, then more cities as we grow.
  * Returns the wanted type even if we can't afford it yet — we save up.
  */
 export function nextEconomyBuild(
@@ -327,6 +329,13 @@ export function nextEconomyBuild(
   const ports = player.unitCount(UnitType.Port);
   const factories = player.unitCount(UnitType.Factory);
 
+  // Trade is most of a coastal nation's income: the first port comes early.
+  const firstPort =
+    coastal &&
+    allowed(UnitType.Port) &&
+    ports === 0 &&
+    cities >= CITIES_BEFORE_FIRST_PORT;
+  if (firstPort) return UnitType.Port;
   if (allowed(UnitType.City) && cities < MIN_CITIES) return UnitType.City;
 
   const portTarget = Math.max(1, Math.floor(cities / CITIES_PER_PORT));

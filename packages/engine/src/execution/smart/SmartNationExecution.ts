@@ -2,6 +2,7 @@ import { TileRef } from "@openfront/engine-api/game/GameMap";
 import {
   Difficulty,
   Nation,
+  PlayerType,
   UnitType,
 } from "@openfront/engine-api/game/GameTypes";
 import { GameID } from "@openfront/engine-api/Schemas";
@@ -14,7 +15,7 @@ import {
 } from "@openfront/engine-lib/snapshot/SnapshotType";
 import { simpleHash } from "@openfront/engine-lib/Util";
 import { z } from "zod";
-import { Execution, Game, Player } from "../../game/Game";
+import { Execution, Game, Player, Unit } from "../../game/Game";
 import {
   NationSchema,
   nationData,
@@ -30,6 +31,7 @@ import type {
 import { AllianceExtensionExecution } from "../alliance/AllianceExtensionExecution";
 import { AllianceRequestExecution } from "../alliance/AllianceRequestExecution";
 import { ConstructionExecution } from "../ConstructionExecution";
+import { MoveWarshipExecution } from "../MoveWarshipExecution";
 import { NationEmojiBehavior } from "../nation/NationEmojiBehavior";
 import { NationMIRVBehavior } from "../nation/NationMIRVBehavior";
 import { NationNukeBehavior } from "../nation/NationNukeBehavior";
@@ -46,10 +48,18 @@ import {
   EXPAND_TROOP_FRACTION,
   SPAWN_MOVE_IMPROVEMENT,
   SPAWN_REEVALUATE_TICKS,
+  PIRACY_MAX_WARSHIPS,
+  PIRACY_MIN_CITIES,
+  PIRACY_MOVE_FACTOR,
+  ALLY_TRADE_PARTNERS,
+  SPARE_PORT_LEVEL_RATIO,
+  SPEND_SPARE_GOLD_ON_CITIES,
   UPGRADE_WHEN_NO_ROOM,
   USE_NUKES,
+  USE_PIRACY,
   USE_WARSHIPS,
 } from "./SmartNationConfig";
+import { capturableTradeShips, piracyLane, shipsNear } from "./SmartPiracy";
 import { otherPlayerSpots, pickSpawnTile, scoreSpawnTile } from "./SmartSpawn";
 import {
   allianceRequestTarget,
@@ -213,6 +223,7 @@ export class SmartNationExecution implements Execution {
     this.handleAlliances(player, hostile);
     this.defend(player, strongest);
     if (USE_NUKES) this.military?.mirv.considerMIRV();
+    if (USE_PIRACY) this.pirate(player);
     this.buildEconomy(player);
     if (USE_WARSHIPS) this.military?.warship.maybeSpawnWarship();
     if (choosePhase(this.mg, player) === "early") {
@@ -313,6 +324,32 @@ export class SmartNationExecution implements Execution {
     if (ask !== null) {
       this.mg.addExecution(new AllianceRequestExecution(player, ask.id()));
     }
+    if (ALLY_TRADE_PARTNERS) this.askTradePartner(player, hostile);
+  }
+
+  /**
+   * One non-neighbouring nation or human with ports, picked at random, for an
+   * alliance: allied ports trade with us more often (the friendly trade
+   * bonus) and an ally overseas won't land boats on us.
+   */
+  private askTradePartner(player: Player, hostile: Player[]): void {
+    const wars = currentWars(player);
+    const partners = this.mg
+      .players()
+      .filter(
+        (p) =>
+          p !== player &&
+          p.isAlive() &&
+          p.type() !== PlayerType.Bot &&
+          !hostile.includes(p) &&
+          !player.isFriendly(p) &&
+          !wars.includes(p) &&
+          p.unitCount(UnitType.Port) > 0 &&
+          player.canSendAllianceRequest(p),
+      );
+    if (partners.length === 0) return;
+    const pick = this.random.randElement(partners);
+    this.mg.addExecution(new AllianceRequestExecution(player, pick.id()));
   }
 
   // ── Defense ───────────────────────────────────────────────────────────────
@@ -341,14 +378,52 @@ export class SmartNationExecution implements Execution {
     const placement = this.placement;
     if (placement === null || this.savingForDefense) return;
     placement.startRound();
-    const type = nextEconomyBuild(this.mg, player, placement.hasCoastalTiles());
-    if (type === null || !canAfford(this.mg, player, type)) return;
+    const planned = nextEconomyBuild(
+      this.mg,
+      player,
+      placement.hasCoastalTiles(),
+    );
+    if (planned === null) {
+      this.spendSpareGold(player);
+      return;
+    }
+    const type = planned;
+    if (!canAfford(this.mg, player, type)) return;
     const tile = placement.spawnTile(type);
     if (tile !== null) {
       this.mg.addExecution(new ConstructionExecution(player, type, tile));
       return;
     }
     if (UPGRADE_WHEN_NO_ROOM) this.upgradeOne(player, type);
+  }
+
+  /**
+   * Nothing planned: spare gold still grows us. Port levels (more trade
+   * ships, most of our income) until they reach SPARE_PORT_LEVEL_RATIO of
+   * our city levels, otherwise cities or city levels (+max troops).
+   */
+  private spendSpareGold(player: Player): void {
+    if (!SPEND_SPARE_GOLD_ON_CITIES) return;
+    const levels = (type: UnitType) =>
+      player.units(type).reduce((sum, u) => sum + u.level(), 0);
+    const portLevels = levels(UnitType.Port);
+    if (
+      portLevels > 0 &&
+      portLevels < levels(UnitType.City) * SPARE_PORT_LEVEL_RATIO &&
+      canAfford(this.mg, player, UnitType.Port)
+    ) {
+      this.upgradeOne(player, UnitType.Port);
+      return;
+    }
+    if (!canAfford(this.mg, player, UnitType.City)) return;
+    const tile = this.placement!.spawnTile(UnitType.City);
+    if (tile !== null) {
+      this.mg.addExecution(
+        new ConstructionExecution(player, UnitType.City, tile),
+      );
+    } else {
+      this.upgradeOne(player, UnitType.City);
+    }
   }
 
   /** Upgrades our lowest-level finished structure of `type`, if any. */
@@ -361,6 +436,59 @@ export class SmartNationExecution implements Execution {
     }
     if (best !== null) {
       this.mg.addExecution(new UpgradeStructureExecution(player, best.id()));
+    }
+  }
+
+  // ── Piracy ────────────────────────────────────────────────────────────────
+
+  /**
+   * Keeps warships on the busiest enemy trade lane (SmartPiracy): builds one
+   * when no warship covers it, or moves the one on the quietest lane there.
+   */
+  private pirate(player: Player): void {
+    const game = this.mg;
+    if (game.config().isUnitDisabled(UnitType.Warship)) return;
+    if (player.unitCount(UnitType.City) < PIRACY_MIN_CITIES) return;
+    const ships = capturableTradeShips(game, player);
+    const lane = piracyLane(game, ships);
+    if (lane === null) return;
+    const range2 = game.config().warshipPatrolRange() ** 2;
+    const warships = player.units(UnitType.Warship);
+    const covered = warships.some((w) => {
+      const patrol = w.warshipState().patrolTile;
+      return (
+        patrol !== undefined &&
+        game.euclideanDistSquared(patrol, lane.tile) <= range2
+      );
+    });
+    if (covered) return;
+
+    if (warships.length < PIRACY_MAX_WARSHIPS) {
+      if (!canAfford(game, player, UnitType.Warship)) return;
+      if (player.canBuild(UnitType.Warship, lane.tile) === false) return;
+      game.addExecution(
+        new ConstructionExecution(player, UnitType.Warship, lane.tile),
+      );
+      return;
+    }
+    let quietest: Unit | null = null;
+    let quietestShips = Infinity;
+    for (const w of warships) {
+      const state = w.warshipState();
+      if (state.state !== "patrolling" || state.isInCombat === true) continue;
+      const n =
+        state.patrolTile === undefined
+          ? 0
+          : shipsNear(game, ships, state.patrolTile);
+      if (n < quietestShips) {
+        quietest = w;
+        quietestShips = n;
+      }
+    }
+    if (quietest !== null && lane.ships >= quietestShips * PIRACY_MOVE_FACTOR) {
+      game.addExecution(
+        new MoveWarshipExecution(player, [quietest.id()], lane.tile),
+      );
     }
   }
 

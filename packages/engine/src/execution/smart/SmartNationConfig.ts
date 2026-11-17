@@ -53,13 +53,14 @@ export const SPAWN_MOVE_IMPROVEMENT = 0.2;
 /** Early game ends once we own this share of the map's land, or free land runs out. */
 export const EARLY_MAX_TERRITORY_SHARE = 0.05;
 /**
- * Troop growth peaks at ~42% of max troops (growth ∝ t^0.73 · (1 - t/max)).
- * So: wait until troops reach EXPAND_TRIGGER_RATIO of max, then send
- * everything above EXPAND_KEEP_RATIO of max — about half our troops — and
- * regrow through the fastest part of the curve.
+ * Free land is a race: tribes and nations claim it within the first minute.
+ * So, like the regular nations, push into it every decision round with
+ * everything above EXPAND_KEEP_RATIO of max troops. (Waiting for the growth
+ * peak at ~42% of max lost too much land in the World/Hard evaluation.)
+ * EXPAND_TRIGGER_RATIO is the troop level below which we don't bother.
  */
-export const EXPAND_TRIGGER_RATIO = 0.5;
-export const EXPAND_KEEP_RATIO = 0.25;
+export const EXPAND_TRIGGER_RATIO = 0.15;
+export const EXPAND_KEEP_RATIO = 0.15;
 /** The very first expansion (right after spawning) sends this fraction of troops. */
 export const EXPAND_TROOP_FRACTION = 0.5;
 /** Attack a neighbouring tribe only if the troops we'd send exceed its troops by this factor. */
@@ -71,6 +72,8 @@ export const TRIBE_ATTACK_ADVANTAGE = 1.3;
 export const MIN_CITIES = 3;
 /** After that, aim for one city per this many owned tiles. */
 export const TILES_PER_CITY = 800;
+/** Coastal nations build their first port after this many cities (trade is most of the income). */
+export const CITIES_BEFORE_FIRST_PORT = 0;
 /** Coastal nations want ports: one per this many cities (at least one). */
 export const CITIES_PER_PORT = 2;
 /** Factories once we have this many cities and ports... */
@@ -97,6 +100,24 @@ export const MIN_CITIES_BEFORE_SILO = 4;
 export const BUILD_SAMS = true;
 export const USE_WARSHIPS = false;
 export const USE_NUKES = false;
+/** With nothing else to build, keep turning gold into cities (or city levels): +250k max troops each. */
+export const SPEND_SPARE_GOLD_ON_CITIES = true;
+/** With spare gold, upgrade ports until their levels reach this share of our city levels (0 = cities only). */
+export const SPARE_PORT_LEVEL_RATIO = 0;
+/**
+ * Piracy: warships patrol the busiest enemy trade lane and capture ships
+ * there (the captor keeps the whole payout). Up to this many warships...
+ */
+export const PIRACY_MAX_WARSHIPS = 1;
+/** ...once we have this many cities... */
+export const PIRACY_MIN_CITIES = 8;
+/** ...for a lane with at least this many capturable ships in patrol range. */
+export const PIRACY_MIN_SHIPS = 3;
+/** Ship positions tried as patrol spots per decision (cost control). */
+export const PIRACY_LANE_CANDIDATES = 40;
+/** Move a warship only to a lane with this many times the ships of its current one. */
+export const PIRACY_MOVE_FACTOR = 2;
+export const USE_PIRACY = true;
 /** When no tile is free for a new structure, upgrade an existing one instead. */
 export const UPGRADE_WHEN_NO_ROOM = true;
 
@@ -131,6 +152,8 @@ export const RETALIATE_ADVANTAGE = 1.2;
 export const ALLY_ACCEPT_STRENGTH_RATIO = 1.5;
 /** Only ask neighbours with at least this many times our troops for an alliance. */
 export const ALLY_REQUEST_MIN_STRENGTH_RATIO = 0.5;
+/** Also ask distant nations with ports for alliances (friendly trade bonus, no boat raids). */
+export const ALLY_TRADE_PARTNERS = true;
 /** Boat attacks send this fraction of available troops (boats are risky). */
 export const BOAT_TROOP_FRACTION = 0.3;
 /** Overseas players (nearest first) considered for a boat attack when nobody borders us. */
