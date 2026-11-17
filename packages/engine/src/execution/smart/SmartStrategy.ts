@@ -296,6 +296,19 @@ export function shouldAcceptAlliance(
   return requestor.troops() >= player.troops() * ALLY_ACCEPT_STRENGTH_RATIO;
 }
 
+/**
+ * Renew an alliance with `ally`? Yes unless it borders us and is weak enough
+ * to be our next war target (see chooseWarTarget).
+ */
+export function shouldRenewAlliance(
+  player: Player,
+  ally: Player,
+  neighbors: Player[],
+): boolean {
+  if (!neighbors.includes(ally)) return true;
+  return ally.troops() > player.troops() * ATTACK_MAX_RELATIVE_STRENGTH;
+}
+
 // ── Economy ─────────────────────────────────────────────────────────────────
 
 /** Can anyone fire a nuke in this game? */

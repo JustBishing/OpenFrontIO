@@ -51,6 +51,7 @@ import {
   PIRACY_MAX_WARSHIPS,
   PIRACY_MIN_CITIES,
   PIRACY_MOVE_FACTOR,
+  RENEW_ALLIANCES,
   ALLY_TRADE_PARTNERS,
   SPARE_PORT_LEVEL_RATIO,
   SPEND_SPARE_GOLD_ON_CITIES,
@@ -79,6 +80,7 @@ import {
   overseasTarget,
   retaliationTarget,
   shouldAcceptAlliance,
+  shouldRenewAlliance,
   strongestHostileNeighbor,
   troopReserve,
   wantsDefensePost,
@@ -217,10 +219,12 @@ export class SmartNationExecution implements Execution {
   }
 
   private decisionRound(player: Player): void {
-    const hostile = hostileNeighbors(player, landNeighbors(this.mg, player));
+    const neighbors = landNeighbors(this.mg, player);
+    const hostile = hostileNeighbors(player, neighbors);
     const strongest = strongestHostileNeighbor(hostile);
 
     this.handleAlliances(player, hostile);
+    if (RENEW_ALLIANCES) this.renewAlliances(player, neighbors);
     this.defend(player, strongest);
     if (USE_NUKES) this.military?.mirv.considerMIRV();
     if (USE_PIRACY) this.pirate(player);
@@ -325,6 +329,19 @@ export class SmartNationExecution implements Execution {
       this.mg.addExecution(new AllianceRequestExecution(player, ask.id()));
     }
     if (ALLY_TRADE_PARTNERS) this.askTradePartner(player, hostile);
+  }
+
+  /** Asks to extend alliances in their extension window (shouldRenewAlliance). */
+  private renewAlliances(player: Player, neighbors: Player[]): void {
+    const cutoff =
+      this.mg.ticks() + this.mg.config().allianceExtensionPromptOffset();
+    for (const alliance of player.alliances()) {
+      if (alliance.expiresAt() > cutoff) continue;
+      if (alliance.agreedToExtend(player)) continue;
+      const other = alliance.other(player);
+      if (!shouldRenewAlliance(player, other, neighbors)) continue;
+      this.mg.addExecution(new AllianceExtensionExecution(player, other.id()));
+    }
   }
 
   /**

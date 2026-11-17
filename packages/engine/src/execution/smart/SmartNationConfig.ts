@@ -154,6 +154,13 @@ export const ALLY_ACCEPT_STRENGTH_RATIO = 1.5;
 export const ALLY_REQUEST_MIN_STRENGTH_RATIO = 0.5;
 /** Also ask distant nations with ports for alliances (friendly trade bonus, no boat raids). */
 export const ALLY_TRADE_PARTNERS = true;
+/**
+ * Renew alliances in their last 30 s (the extension window) with every ally
+ * except bordering ones weak enough to attack: a big neighbour whose
+ * alliance runs out tends to attack at once. (Nations never ask to renew
+ * themselves; they only answer.)
+ */
+export const RENEW_ALLIANCES = true;
 /** Boat attacks send this fraction of available troops (boats are risky). */
 export const BOAT_TROOP_FRACTION = 0.3;
 /** Overseas players (nearest first) considered for a boat attack when nobody borders us. */

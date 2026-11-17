@@ -26,6 +26,7 @@ import {
   isThreat,
   nextEconomyBuild,
   shouldAcceptAlliance,
+  shouldRenewAlliance,
   troopReserve,
 } from "@openfront/engine/execution/smart/SmartStrategy";
 import { SpawnExecution } from "@openfront/engine/execution/SpawnExecution";
@@ -201,6 +202,23 @@ describe("SmartStrategy", () => {
     expect(troopReserve(game, me, null)).toBeCloseTo(max * 0.25);
     enemy.setTroops(max * 100);
     expect(troopReserve(game, me, enemy)).toBeCloseTo(max * 0.6);
+  });
+
+  it("renews alliances except with weak neighbours it may attack", () => {
+    const game = landMap();
+    const me = addPlayer(game, "me", PlayerType.Nation);
+    const strong = addPlayer(game, "strong", PlayerType.Nation);
+    const weak = addPlayer(game, "weak", PlayerType.Nation);
+    const distant = addPlayer(game, "distant", PlayerType.Nation);
+    me.setTroops(10_000);
+    strong.setTroops(20_000);
+    weak.setTroops(1_000);
+    distant.setTroops(1_000);
+    const neighbors = [strong, weak];
+    expect(shouldRenewAlliance(me, strong, neighbors)).toBe(true);
+    expect(shouldRenewAlliance(me, weak, neighbors)).toBe(false);
+    // Overseas trade partners are never war targets by land.
+    expect(shouldRenewAlliance(me, distant, neighbors)).toBe(true);
   });
 
   it("only fights its current war while one is going on", () => {
